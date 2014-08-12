@@ -1,0 +1,98 @@
+#include <media.defs>
+
+Manufacturer "KONICA MINOLTA"
+Version ""
+
+Filter application/vnd.cups-raster 100 rastertom2x00w
+
+HWMargins 14.25 14.25 14.25 14.25
+
+*MediaSize A4
+MediaSize B5
+MediaSize A5
+// 0x0C: Japanese postcard
+MediaSize Folio
+MediaSize Legal
+// 0x1A: government legal
+MediaSize Letter
+MediaSize Executive
+MediaSize Statement
+MediaSize EnvMonarch
+MediaSize Env10
+MediaSize EnvDL
+MediaSize EnvC5
+MediaSize EnvC6
+MediaSize ISOB5
+
+
+MinSize 3in 5in
+MaxSize 8.5in 14in
+VariablePaperSize yes
+
+ColorDevice yes
+ColorModel Gray/Grayscale k chunky 0
+*ColorModel CMYK ymck planar 0
+
+*Resolution - 1 0 0 0 "600x600dpi/600x600 DPI"
+Resolution - 1 0 0 0 "1200x600dpi/1200x600 DPI"
+
+*MediaType 0 "PLAIN/Plain"
+MediaType 1 "THICK/Thick"
+MediaType 2 "TRANSP/Transparency"
+MediaType 3 "ENVELOPE/Envelope"
+MediaType 4 "LETTERHD/Letterhead"
+MediaType 5 "POSTCARD/Postcard"
+MediaType 6 "LABEL/Label"
+
+Option "ImageRefinement/Image Refinement" Boolean AnySetup 10
+	Choice "OFF/Off" ""
+	*Choice "ON/On" ""
+
+Option "TonerSave/Toner Save" PickOne AnySetup 10
+	*Choice "DEFAULT/Use Printer Default" ""
+	Choice "OFF/Off" ""
+	Choice "ON/On" ""
+
+{	/* older firmware */
+	Manufacturer "MINOLTA-QMS"
+	ModelName "magicolor 2300W"
+	ModelNumber 0x82
+	Throughput 16
+	ManualCopies yes
+	PCFileName "mc2300wq.ppd"
+}
+{
+	ModelName "mc2300W"
+	ModelNumber 0x82
+	Throughput 16
+	ManualCopies yes
+	PCFileName "mc2300w.ppd"
+}
+{	ModelName "magicolor 2400W"
+	ModelNumber 0x85
+	Throughput 20
+	ManualCopies yes
+	PCFileName "mc2400w.ppd"
+	Resolution - 1 0 0 0 "2400x600dpi/2400x600 DPI"
+}
+{
+	ModelName "mc2500W"
+	ModelNumber 0x87
+	Throughput 20
+	ManualCopies no
+	PCFileName "mc2500w.ppd"
+	Resolution - 1 0 0 0 "2400x600dpi/2400x600 DPI"
+	MediaType 8 "GLOSSY/Glossy"
+	MediaSize DoublePostcard
+	MediaSize EnvYou4
+	// 0x15: Kai-32
+	// 0x1D: G.letter
+	MediaSize EnvChou3
+	MediaSize EnvChou4
+	// 0x46: foolscap
+	// 0x51: 16K
+	// 0x52: Kai-16
+	// 0x53: letter plus
+	MediaSize Quarto
+	// 0x65: photo 10x15 = photo 4x6"
+}

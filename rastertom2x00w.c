@@ -219,15 +219,16 @@ void write_data_block(FILE *stream, enum m2x00w_color color, u8 *buf, u32 len, u
 	};
 	write_block(M2X00W_BLOCK_DATA, &header, sizeof(header), stream);
 	fwrite(buf + buf_pos - len, 1, len, stream);
-//	DBG("wrote %d byte block, buf_pos=%d\n", block_len, buf_pos);
+//	DBG("wrote %d byte block, buf_pos=%d\n", len, buf_pos);
 }
 
-void encode_color(cups_raster_t *ras, FILE *stream, int line_len_file, u16 lines_per_block, enum m2x00w_color color) {
+void encode_color(cups_raster_t *ras, FILE *stream, int height, int line_len_file, u16 lines_per_block, enum m2x00w_color color) {
 	int line = 0, block_len = 0;
 	u8 data[line_len_file];
 	u8 blocks = 0;
 
-	while (cupsRasterReadPixels(ras, data, line_len_file)) {
+	buf_pos = 0;
+	while (line < height && cupsRasterReadPixels(ras, data, line_len_file)) {
 		block_len += encode_line(data, line_len_file);
 		line++;
 		if (line % lines_per_block == 0) {
@@ -313,7 +314,6 @@ int main(int argc, char *argv[]) {
 		u16 lines_per_block = DIV_ROUND_UP(height, BLOCKS_PER_PAGE);
 		buf_size = line_len_file * lines_per_block;////////////could be bigger in worst case?!
 		buf = realloc(buf, buf_size);
-		buf_pos = 0;
 		dpi = page_header.HWResolution[0];
 		DBG("line_len_file=%d, height=%d width=%d", line_len_file, height, width);
 		DBG("dpi_x=%d,cupsColorOrder=%d,cupsColorSpace=%d", dpi, page_header.cupsColorOrder, page_header.cupsColorSpace);
@@ -358,11 +358,11 @@ int main(int argc, char *argv[]) {
 		write_block(M2X00W_BLOCK_PAGE, &page_params, sizeof(page_params), stdout);
 		/* read raster data */
 		if (page_params.color_mode == MODE_COLOR) {
-			encode_color(ras, stdout, line_len_file, lines_per_block, COLOR_Y);
-			encode_color(ras, stdout, line_len_file, lines_per_block, COLOR_M);
-			encode_color(ras, stdout, line_len_file, lines_per_block, COLOR_C);
+			encode_color(ras, stdout, height, line_len_file, lines_per_block, COLOR_Y);
+			encode_color(ras, stdout, height, line_len_file, lines_per_block, COLOR_M);
+			encode_color(ras, stdout, height, line_len_file, lines_per_block, COLOR_C);
 		}
-		encode_color(ras, stdout, line_len_file, lines_per_block, COLOR_K);
+		encode_color(ras, stdout, height, line_len_file, lines_per_block, COLOR_K);
 	}
 	free(buf);
 	ppdClose(ppd);

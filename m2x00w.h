@@ -109,7 +109,7 @@ enum m2x00w_color { COLOR_K = 0, COLOR_C, COLOR_M, COLOR_Y };
 struct block_data {
 	unsigned int data_len;
 	unsigned char color;	/* 00=K, 01=C, 02=M, 03=Y */
-	unsigned char block_cnt;
+	unsigned char block_num;
 	unsigned short lines;	/* lines per block */
 } __attribute__((packed));
 

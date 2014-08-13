@@ -210,7 +210,19 @@ u32 encode_line(u8 *data, int len) {
 	return out_len;
 }
 
-int encode_color(cups_raster_t *ras, FILE *stream, int line_len_file, u16 lines_per_block, enum m2x00w_color color) {
+void write_data_block(FILE *stream, enum m2x00w_color color, u8 *buf, u32 len, u8 block_num, u16 lines) {
+	struct block_data header = {
+		.data_len = cpu_to_le32(len),
+		.color = color,
+		.block_num = block_num,
+		.lines = cpu_to_le16(lines),
+	};
+	write_block(M2X00W_BLOCK_DATA, &header, sizeof(header), stream);
+	fwrite(buf + buf_pos - len, 1, len, stream);
+//	DBG("wrote %d byte block, buf_pos=%d\n", block_len, buf_pos);
+}
+
+void encode_color(cups_raster_t *ras, FILE *stream, int line_len_file, u16 lines_per_block, enum m2x00w_color color) {
 	int line = 0, block_len = 0;
 	u8 data[line_len_file];
 	u8 blocks = 0;
@@ -219,18 +231,12 @@ int encode_color(cups_raster_t *ras, FILE *stream, int line_len_file, u16 lines_
 		block_len += encode_line(data, line_len_file);
 		line++;
 		if (line % lines_per_block == 0) {
-			struct block_data header = {
-				.data_len = cpu_to_le32(block_len),
-				.color = color,
-				.block_cnt = ++blocks,
-				.lines = cpu_to_le16(lines_per_block),
-			};
-			write_block(M2X00W_BLOCK_DATA, &header, sizeof(header), stream);
-			fwrite(buf + buf_pos - block_len, 1, block_len, stream);
-//			DBG("wrote %d byte block, buf_pos=%d\n", block_len, buf_pos);
+			write_data_block(stream, color, buf, block_len, ++blocks, lines_per_block);
 			block_len = 0;
 		}
 	}
+	if (line % lines_per_block)
+		write_data_block(stream, color, buf, block_len, ++blocks, line % lines_per_block);
 }
 
 char *ppd_get(ppd_file_t *ppd, const char *name) {
@@ -304,7 +310,7 @@ int main(int argc, char *argv[]) {
 //		line_len = ROUND_UP_MULTIPLE(line_len_file, 4);
 		height = page_header.cupsHeight;
 		width = page_header.cupsWidth;
-		u16 lines_per_block = height / BLOCKS_PER_PAGE;
+		u16 lines_per_block = DIV_ROUND_UP(height, BLOCKS_PER_PAGE);
 		buf_size = line_len_file * lines_per_block;////////////could be bigger in worst case?!
 		buf = realloc(buf, buf_size);
 		buf_pos = 0;

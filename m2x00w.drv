@@ -25,8 +25,8 @@ MediaSize EnvC6
 MediaSize ISOB5
 
 
-MinSize 3in 5in
-MaxSize 8.5in 14in
+MinSize 92cm 148cm
+MaxSize 216cm 356cm
 VariablePaperSize yes
 
 ColorDevice yes
@@ -83,6 +83,7 @@ Option "TonerSave/Toner Save" PickOne AnySetup 10
 	PCFileName "mc2500w.ppd"
 	Resolution - 1 0 0 0 "2400x600dpi/2400x600 DPI"
 	MediaType 8 "GLOSSY/Glossy"
+	MinSize 90cm 148cm
 	MediaSize DoublePostcard
 	MediaSize EnvYou4
 	// 0x15: Kai-32

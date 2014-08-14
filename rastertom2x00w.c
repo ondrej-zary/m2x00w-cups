@@ -28,7 +28,6 @@ enum m2x00w_model model;
 u8 block_seq;
 u8 *buf;
 int buf_size, buf_pos;
-//u16 line_len;
 u16 line_len_file;
 int width, height, dpi;
 
@@ -308,9 +307,8 @@ int main(int argc, char *argv[]) {
 		fprintf(stderr, "PAGE: %d %d\n", page, page_header.NumCopies);
 
 		line_len_file = page_header.cupsBytesPerLine;
-//		line_len = ROUND_UP_MULTIPLE(line_len_file, 4);
 		height = page_header.cupsHeight;
-		width = page_header.cupsWidth;
+		width = ROUND_UP_MULTIPLE(page_header.cupsWidth, 8);
 		u16 lines_per_block = DIV_ROUND_UP(height, BLOCKS_PER_PAGE);
 		buf_size = line_len_file * lines_per_block;////////////could be bigger in worst case?!
 		buf = realloc(buf, buf_size);

@@ -8,6 +8,7 @@
 
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
 #define DIV_ROUND_UP(n, d) (((n) + (d) - 1) / (d))
+#define ROUND_UP_MULTIPLE(n, m) (((n) + (m) - 1) & ~((m) - 1))
 
 #if defined(__BYTE_ORDER) && __BYTE_ORDER == __BIG_ENDIAN
 #else

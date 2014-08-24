@@ -1,5 +1,7 @@
 /* CUPS driver for Minolta magicolor 2300W/2400W/2500W printers */
 /* Copyright (c) 2014 Ondrej Zary */
+#include <stdint.h>
+
 #define u8 uint8_t
 #define u16 uint16_t
 #define u32 uint32_t
@@ -14,6 +16,8 @@
 #else
 #define cpu_to_le16(x) (x)
 #define cpu_to_le32(x) (x)
+#define le16_to_cpu(x) (x)
+#define le32_to_cpu(x) (x)
 #endif
 
 #define BLOCKS_PER_PAGE		8
@@ -117,3 +121,15 @@ struct block_data {
 struct block_endpart {
 	unsigned char type;	/* 00=end job 10=wait for button (manual duplex) */
 } __attribute__((packed));
+
+u8 checksum(void *p, int length) {
+	u8 sum = 0;
+	u8 *data = p;
+
+	for (int i = 0; i < length; i++) {
+		sum += *data;
+		data++;
+	}
+
+	return sum;
+}

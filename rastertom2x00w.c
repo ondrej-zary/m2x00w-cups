@@ -31,19 +31,6 @@ int buf_size, buf_pos;
 u16 line_len_file;
 int width, height, dpi;
 
-u8 checksum(void *p, int length)
-{
-	u8 sum = 0;
-	u8 *data = p;
-
-	for (int i = 0; i < length; i++) {
-		sum += *data;
-		data++;
-	}
-
-	return sum;
-}
-
 void write_block(u8 block_type, void *data, u8 data_len, FILE *stream)
 {
 	struct header header;

@@ -9,6 +9,7 @@
 enum m2x00w_model model;
 int line_bytes;
 u8 *line_buf;
+int buf_pos;
 
 char *decode_model(u8 model) {
 	switch (model) {
@@ -65,8 +66,6 @@ char *decode_paper_size(u8 paper) {
 }
 
 void output_byte(FILE *fout, u8 b) {
-	static int buf_pos;
-
 	if (model == M2400W)	/* interleaved lines */
 		line_buf[buf_pos % 2 * line_bytes + buf_pos / 2] = b;
 	else
@@ -138,6 +137,8 @@ void decode_data_block(void *data, FILE *f, FILE *fout) {
 	printf("  Raster data: ch%d, #%d, %d bytes compressed, %d uncompressed lines are %d bytes each\n",
 		header->color, header->block_num, nbytes, lines, line_bytes_virt);
 
+	buf_pos = 0;
+
 	if (model == M2400W) {
 		lines /= 2;
 		line_bytes_virt *= 2;
@@ -146,7 +147,7 @@ void decode_data_block(void *data, FILE *f, FILE *fout) {
 		u8 table[16];
 		u8 table_len;
 
-		printf("POS=0x%lx: ", ftell(f));
+		printf("POS=0x%lx, line=%d: ", ftell(f), line);
 		fread(&table_len, 1, 1, f);
 		printf("table_len=0x%02hhx\n", table_len);
 		if (!(table_len & 0x80))
@@ -215,6 +216,8 @@ void decode_data_block(void *data, FILE *f, FILE *fout) {
 			return;
 		}
 	}
+	if (buf_pos) /* flush last line if needed */
+		fwrite(line_buf, 1, buf_pos, fout);
 }
 
 void min_parse_block(FILE *f, FILE *fout)

@@ -297,7 +297,8 @@ int main(int argc, char *argv[]) {
 		height = page_header.cupsHeight;
 		width = ROUND_UP_MULTIPLE(page_header.cupsWidth, 8);
 		u16 lines_per_block = DIV_ROUND_UP(height, BLOCKS_PER_PAGE);
-		buf_size = line_len_file * lines_per_block;////////////could be bigger in worst case?!
+		/* worst case: start byte + 16-byte table + 5-byte padding + each byte encoded as two */
+		buf_size = 1 + 16 + 5 + 2 * line_len_file * lines_per_block;
 		buf = realloc(buf, buf_size);
 		dpi = page_header.HWResolution[0];
 		DBG("line_len_file=%d, height=%d width=%d", line_len_file, height, width);

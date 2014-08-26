@@ -210,13 +210,25 @@ void write_data_block(FILE *stream, enum m2x00w_color color, u8 *buf, u32 len, u
 
 void encode_color(cups_raster_t *ras, FILE *stream, int height, int line_len_file, u16 lines_per_block, enum m2x00w_color color) {
 	int line = 0, block_len = 0;
-	u8 data[line_len_file];
+	u8 data[2 * line_len_file];
 	u8 blocks = 0;
 
 	buf_pos = 0;
 	while (line < height && cupsRasterReadPixels(ras, data, line_len_file)) {
-		block_len += encode_line(data, line_len_file);
-		line++;
+		if (model == M2400W) { /* interleaved lines */
+			u8 data2[line_len_file];
+			if (line >= height || !cupsRasterReadPixels(ras, data2, line_len_file))
+				memset(data2, 0, line_len_file);
+			for (int i = line_len_file - 1; i >= 0; i--) {
+				data[2 * i] = data[i];
+				data[2 * i + 1] = data2[i];
+			}
+			block_len += encode_line(data, 2 * line_len_file);
+			line += 2;
+		} else {
+			block_len += encode_line(data, line_len_file);
+			line++;
+		}
 		if (line % lines_per_block == 0) {
 			write_data_block(stream, color, buf, block_len, ++blocks, lines_per_block);
 			block_len = 0;
@@ -322,7 +334,7 @@ int main(int argc, char *argv[]) {
 		struct block_page page_params = {
 			.copies = (model == M2500W) ? copies : 1,
 			.x_end = cpu_to_le16(width),
-			.y_end = cpu_to_le16(height),
+			.y_end = cpu_to_le16((model == M2400W) ? ROUND_UP_MULTIPLE(height, 2) : height),
 			.paper_size = encode_paper_size(page_size_name),
 //			.custom_width = ,
 //			.custom_height = ,

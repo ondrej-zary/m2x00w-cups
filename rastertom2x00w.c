@@ -29,6 +29,7 @@ u8 block_seq;
 int buf_size;
 u16 line_len_file;
 int width, height, dpi;
+struct block_page page_params;
 
 void write_block(u8 block_type, void *data, u8 data_len, FILE *stream)
 {
@@ -140,16 +141,20 @@ u32 encode_rle(u8 byte, int count, u8 *buf, int *buf_pos) {
 	return out_len;
 }
 
-u32 encode_line(u8 *data, int len, u8 *buf, int *buf_pos) {
+u32 encode_line(u8 *data, int len, u8 *buf, int *buf_pos, bool *empty) {
 	u8 last = data[0];
 	int raw_pos = 0, run_len = 0;
 	u8 empty_table = 0x80;
 	u32 out_len = 0;
 
+	*empty = true;
+
 	buf_add(&empty_table, 1, buf, buf_pos);
 	out_len += 1;
 
 	for (int i = 0; i < len; i++) {
+		if (*empty && data[i] != 0x00)
+			*empty = false;
 //		DBG("i=%d ", i);
 		if (data[i] == last) {
 //			DBG("run_len++");
@@ -207,38 +212,80 @@ void write_data_block(FILE *stream, enum m2x00w_color color, u8 *buf, int buf_po
 //	DBG("wrote %d byte block, buf_pos=%d\n", len, buf_pos);
 }
 
+/* a wrapper to simplify lazy-color mode */
+unsigned cups_get_pixels(cups_raster_t *r, unsigned char *p, unsigned len) {
+	if (r)
+		return cupsRasterReadPixels(r, p, len);
+	else {	/* all zero data */
+		memset(p, 0, len);
+		return len;
+	}
+}
+
 void encode_color(cups_raster_t *ras, FILE *stream, int height, int line_len_file, u16 lines_per_block, enum m2x00w_color color) {
 	int line = 0, block_len = 0, buf_pos = 0;
 	u8 data[2 * line_len_file];
-	u8 blocks = 0;
+	u8 data_block_seq = 1;
+	bool empty;
 	u8 *buf = malloc(buf_size);
 
 	if (!buf) {
 		ERR("Memory allocation error");
 		exit(1);
 	}
-	while (line < height && cupsRasterReadPixels(ras, data, line_len_file)) {
+	DBG("encode_color ras=%p, height=%d, color=%d", ras, height, color);
+	while (line < height && cups_get_pixels(ras, data, line_len_file)) {
 		if (model == M2400W) { /* interleaved lines */
 			u8 data2[line_len_file];
-			if (line >= height || !cupsRasterReadPixels(ras, data2, line_len_file))
+			if (line >= height || !cups_get_pixels(ras, data2, line_len_file))
 				memset(data2, 0, line_len_file);
 			for (int i = line_len_file - 1; i >= 0; i--) {
 				data[2 * i] = data[i];
 				data[2 * i + 1] = data2[i];
 			}
-			block_len += encode_line(data, 2 * line_len_file, buf, &buf_pos);
+			block_len += encode_line(data, 2 * line_len_file, buf, &buf_pos, &empty);
 			line += 2;
 		} else {
-			block_len += encode_line(data, line_len_file, buf, &buf_pos);
+			block_len += encode_line(data, line_len_file, buf, &buf_pos, &empty);
 			line++;
 		}
+		/*
+		 * Lazy color mode:
+		 * We don't output any data as long as zero color bytes are coming from CUPS.
+		 * So if all YMC color bytes are zero, the page is printed in BW mode, increasing print speed.
+		 * This means that when we found the first non-zero byte in any of YMC colors, we need to output
+		 * everything that we omitted before (in the hope that it won't be needed):
+		 *  - all previous empty colors (Y and M when we're in C, only Y when in M and nothing in Y)
+		 *  - empty blocks of the current color
+		 * This method might seem a bit strange but it saves us from buffering large amounts of data.
+		 */
+		if (page_params.color_mode != MODE_COLOR && color != COLOR_K && !empty) {
+			DBG("Found first color byte in lazy color mode before line %d", line);
+			/* we found first non-zero color byte: set mode to color and output the page params */
+			page_params.color_mode = MODE_COLOR;
+			page_params.blocks1 = page_params.blocks2 = cpu_to_le16(BLOCKS_PER_PAGE * 4);
+			write_block(M2X00W_BLOCK_PAGE, &page_params, sizeof(page_params), stdout);
+			/* now we have to output the empty color data we omitted before */
+			if (color == COLOR_C || color == COLOR_M)	/* output empty Y */
+				encode_color(NULL, stdout, height, line_len_file, lines_per_block, COLOR_Y);
+			if (color == COLOR_C)	/* output empty M */
+				encode_color(NULL, stdout, height, line_len_file, lines_per_block, COLOR_M);
+			/* output empty blocks of the current color that we omitted before */
+			if (line > lines_per_block)
+				encode_color(NULL, stdout, line / lines_per_block * lines_per_block, line_len_file, lines_per_block, color);
+		}
 		if (line % lines_per_block == 0) {
-			write_data_block(stream, color, buf, buf_pos, block_len, ++blocks, lines_per_block);
+			/* output data only if encoding black or we have found a non-empty color byte */
+			if (color == COLOR_K || page_params.color_mode == MODE_COLOR)
+				write_data_block(stream, color, buf, buf_pos, block_len, data_block_seq, lines_per_block);
+			data_block_seq++;
 			block_len = 0;
 		}
 	}
 	if (line % lines_per_block)
-		write_data_block(stream, color, buf, buf_pos, block_len, ++blocks, line % lines_per_block);
+		/* output data only if encoding black or we have found a non-empty color byte */
+		if (color == COLOR_K || page_params.color_mode == MODE_COLOR)
+			write_data_block(stream, color, buf, buf_pos, block_len, data_block_seq, line % lines_per_block);
 	free(buf);
 }
 
@@ -316,7 +363,7 @@ int main(int argc, char *argv[]) {
 		/* worst case: start byte + 16-byte table + 5-byte padding + each byte encoded as two */
 		buf_size = 1 + 16 + 5 + 2 * line_len_file * lines_per_block;
 		dpi = page_header.HWResolution[0];
-		DBG("line_len_file=%d, height=%d width=%d", line_len_file, height, width);
+		DBG("line_len_file=%d, height=%d width=%d, buf_size=%d", line_len_file, height, width, buf_size);
 		DBG("dpi_x=%d,cupsColorOrder=%d,cupsColorSpace=%d", dpi, page_header.cupsColorOrder, page_header.cupsColorSpace);
 		if (!header_written) {	/* print parameters */
 			struct block_params params = { .res_y = (model == M2300W) ? RES_1200DPI : RES_600DPI };
@@ -334,10 +381,13 @@ int main(int argc, char *argv[]) {
 		if (strlen(page_size_name) == 0)
 			page_size_name = ppd_get(ppd, "PageSize");
 
-		struct block_page page_params = {
+		page_params = (struct block_page) {
+			.color_mode = (model == M2300W) ? MODE_BW_2300 : MODE_BW,
 			.copies = (model == M2500W) ? copies : 1,
 			.x_end = cpu_to_le16(width),
 			.y_end = cpu_to_le16((model == M2400W) ? ROUND_UP_MULTIPLE(height, 2) : height),
+			.blocks1 = cpu_to_le16(BLOCKS_PER_PAGE),
+			.blocks2 = cpu_to_le16(BLOCKS_PER_PAGE),
 			.paper_size = encode_paper_size(page_size_name),
 //			.custom_width = ,
 //			.custom_height = ,
@@ -346,23 +396,18 @@ int main(int argc, char *argv[]) {
 			.unknown = (model == M2300W) ? 1 : 0,/////
 		};
 
-		if (page_header.cupsColorSpace == CUPS_CSPACE_K) {
-			page_params.color_mode = (model == M2300W) ? MODE_BW_2300 : MODE_BW;
-			page_params.blocks1 = page_params.blocks2 = cpu_to_le16(BLOCKS_PER_PAGE);
-		} else if (page_header.cupsColorSpace == CUPS_CSPACE_YMCK) {
-			page_params.color_mode = MODE_COLOR;
-			page_params.blocks1 = page_params.blocks2 = cpu_to_le16(BLOCKS_PER_PAGE * 4);
-		} else {
+		if (page_header.cupsColorSpace != CUPS_CSPACE_K && page_header.cupsColorSpace != CUPS_CSPACE_YMCK) {
 			ERR("invalid color space: %d", page_header.cupsColorSpace);
 			return 3;
 		}
-		write_block(M2X00W_BLOCK_PAGE, &page_params, sizeof(page_params), stdout);
-		/* read raster data */
-		if (page_params.color_mode == MODE_COLOR) {
+		/* process raster data */
+		if (page_header.cupsColorSpace == CUPS_CSPACE_YMCK) {
 			encode_color(ras, stdout, height, line_len_file, lines_per_block, COLOR_Y);
 			encode_color(ras, stdout, height, line_len_file, lines_per_block, COLOR_M);
 			encode_color(ras, stdout, height, line_len_file, lines_per_block, COLOR_C);
 		}
+		if (page_params.color_mode != MODE_COLOR) /* in color mode, page params were already written */
+			write_block(M2X00W_BLOCK_PAGE, &page_params, sizeof(page_params), stdout);
 		encode_color(ras, stdout, height, line_len_file, lines_per_block, COLOR_K);
 	}
 	ppdClose(ppd);

@@ -44,15 +44,6 @@ MediaType 4 "LETTERHD/Letterhead"
 MediaType 5 "POSTCARD/Postcard"
 MediaType 6 "LABEL/Label"
 
-Option "ImageRefinement/Image Refinement" Boolean AnySetup 10
-	Choice "OFF/Off" ""
-	*Choice "ON/On" ""
-
-Option "TonerSave/Toner Save" PickOne AnySetup 10
-	*Choice "DEFAULT/Use Printer Default" ""
-	Choice "OFF/Off" ""
-	Choice "ON/On" ""
-
 {	/* older firmware */
 	Manufacturer "MINOLTA-QMS"
 	ModelName "magicolor 2300W"

@@ -26,8 +26,7 @@
 
 enum m2x00w_model model;
 u8 block_seq;
-u8 *buf;
-int buf_size, buf_pos;
+int buf_size;
 u16 line_len_file;
 int width, height, dpi;
 
@@ -82,16 +81,16 @@ enum m2x00w_paper_size encode_paper_size(const char *paper_size_name) {
 		return PAPER_CUSTOM;
 }
 
-void buf_add(void *data, int len) {
-	if (buf_pos + len > buf_size) {
+void buf_add(void *data, int len, u8 *buf, int *buf_pos) {
+	if (*buf_pos + len > buf_size) {
 		ERR("buffer overflow");
 		exit(1);
 	}
-	memcpy(buf + buf_pos, data, len);
-	buf_pos += len;
+	memcpy(buf + *buf_pos, data, len);
+	*buf_pos += len;
 }
 
-u32 encode_raw(u8 *data, int len) {
+u32 encode_raw(u8 *data, int len, u8 *buf, int *buf_pos) {
 	u32 out_len = 0;
 
 //	DBG("%d raw bytes\n", len);
@@ -99,8 +98,8 @@ u32 encode_raw(u8 *data, int len) {
 		u8 chunk = (len > 64) ? 64 : len;
 		u8 count = chunk - 1;
 
-		buf_add(&count, 1);
-		buf_add(data, chunk);
+		buf_add(&count, 1, buf, buf_pos);
+		buf_add(data, chunk, buf, buf_pos);
 		out_len += chunk + 1;
 		data += chunk;
 		len -= chunk;
@@ -109,7 +108,7 @@ u32 encode_raw(u8 *data, int len) {
 	return out_len;
 }
 
-u32 encode_rle(u8 byte, int count) {
+u32 encode_rle(u8 byte, int count, u8 *buf, int *buf_pos) {
 	u8 repeat;
 	u32 out_len = 0;
 
@@ -117,37 +116,37 @@ u32 encode_rle(u8 byte, int count) {
 	if (count >= 4096) {
 		/* encode 4096B run as two 2048B runs (happens only on 2400W at 2400dpi) */
 		repeat = 0xe0;
-		buf_add(&repeat, 1);
-		buf_add(&byte, 1);
-		buf_add(&repeat, 1);
-		buf_add(&byte, 1);
+		buf_add(&repeat, 1, buf, buf_pos);
+		buf_add(&byte, 1, buf, buf_pos);
+		buf_add(&repeat, 1, buf, buf_pos);
+		buf_add(&byte, 1, buf, buf_pos);
 		out_len += 4;
 		count -= 4096;
 	}
 	if (count / 64 > 0) {
 		repeat = 0xc0 + count / 64;
-		buf_add(&repeat, 1);
-		buf_add(&byte, 1);
+		buf_add(&repeat, 1, buf, buf_pos);
+		buf_add(&byte, 1, buf, buf_pos);
 		out_len += 2;
 		count -= count / 64 * 64;
 	}
 	if (count > 0) {
 		repeat = 0x80 + count;
-		buf_add(&repeat, 1);
-		buf_add(&byte, 1);
+		buf_add(&repeat, 1, buf, buf_pos);
+		buf_add(&byte, 1, buf, buf_pos);
 		out_len += 2;
 	}
 
 	return out_len;
 }
 
-u32 encode_line(u8 *data, int len) {
+u32 encode_line(u8 *data, int len, u8 *buf, int *buf_pos) {
 	u8 last = data[0];
 	int raw_pos = 0, run_len = 0;
 	u8 empty_table = 0x80;
 	u32 out_len = 0;
 
-	buf_add(&empty_table, 1);
+	buf_add(&empty_table, 1, buf, buf_pos);
 	out_len += 1;
 
 	for (int i = 0; i < len; i++) {
@@ -157,8 +156,8 @@ u32 encode_line(u8 *data, int len) {
 			run_len++;
 		} else {
 			if (run_len > 2) {
-				out_len += encode_raw(data + raw_pos, i - raw_pos - run_len);
-				out_len += encode_rle(last, run_len);
+				out_len += encode_raw(data + raw_pos, i - raw_pos - run_len, buf, buf_pos);
+				out_len += encode_rle(last, run_len, buf, buf_pos);
 				raw_pos = i;
 			}
 //			DBG("run_len = 0");
@@ -170,8 +169,8 @@ u32 encode_line(u8 *data, int len) {
 //	DBG("flush\n");
 	if (run_len < 3)
 		run_len = 0;
-	out_len += encode_raw(data + raw_pos, len - raw_pos - run_len);
-	out_len += encode_rle(last, run_len);
+	out_len += encode_raw(data + raw_pos, len - raw_pos - run_len, buf, buf_pos);
+	out_len += encode_rle(last, run_len, buf, buf_pos);
 
 	/* padding for 2500W */
 	if (model == M2500W) {
@@ -184,19 +183,19 @@ u32 encode_line(u8 *data, int len) {
 		pad_header[0] = (padlen << 6) | ((rowlen >> 8) & 0x3f);
 		pad_header[1] = rowlen & 0xff;
 		/* make space for pad_header and padding */
-		memmove(buf + buf_pos - out_len + 1 + sizeof(pad_header) + padlen, buf + buf_pos - out_len + 1, out_len);
+		memmove(buf + *buf_pos - out_len + 1 + sizeof(pad_header) + padlen, buf + *buf_pos - out_len + 1, out_len);
 		/* insert pad_header and padding */
-		memcpy(buf + buf_pos - out_len + 1, pad_header, sizeof(pad_header));
-		memcpy(buf + buf_pos - out_len + 1 + sizeof(pad_header), padding, padlen);
-		buf[buf_pos - out_len] |= 0x40;
-		buf_pos += sizeof(pad_header) + padlen;
+		memcpy(buf + *buf_pos - out_len + 1, pad_header, sizeof(pad_header));
+		memcpy(buf + *buf_pos - out_len + 1 + sizeof(pad_header), padding, padlen);
+		buf[*buf_pos - out_len] |= 0x40;
+		*buf_pos += sizeof(pad_header) + padlen;
 		out_len += sizeof(pad_header) + padlen;
 	}
 
 	return out_len;
 }
 
-void write_data_block(FILE *stream, enum m2x00w_color color, u8 *buf, u32 len, u8 block_num, u16 lines) {
+void write_data_block(FILE *stream, enum m2x00w_color color, u8 *buf, int buf_pos, u32 len, u8 block_num, u16 lines) {
 	struct block_data header = {
 		.data_len = cpu_to_le32(len),
 		.color = color,
@@ -209,11 +208,15 @@ void write_data_block(FILE *stream, enum m2x00w_color color, u8 *buf, u32 len, u
 }
 
 void encode_color(cups_raster_t *ras, FILE *stream, int height, int line_len_file, u16 lines_per_block, enum m2x00w_color color) {
-	int line = 0, block_len = 0;
+	int line = 0, block_len = 0, buf_pos = 0;
 	u8 data[2 * line_len_file];
 	u8 blocks = 0;
+	u8 *buf = malloc(buf_size);
 
-	buf_pos = 0;
+	if (!buf) {
+		ERR("Memory allocation error");
+		exit(1);
+	}
 	while (line < height && cupsRasterReadPixels(ras, data, line_len_file)) {
 		if (model == M2400W) { /* interleaved lines */
 			u8 data2[line_len_file];
@@ -223,19 +226,20 @@ void encode_color(cups_raster_t *ras, FILE *stream, int height, int line_len_fil
 				data[2 * i] = data[i];
 				data[2 * i + 1] = data2[i];
 			}
-			block_len += encode_line(data, 2 * line_len_file);
+			block_len += encode_line(data, 2 * line_len_file, buf, &buf_pos);
 			line += 2;
 		} else {
-			block_len += encode_line(data, line_len_file);
+			block_len += encode_line(data, line_len_file, buf, &buf_pos);
 			line++;
 		}
 		if (line % lines_per_block == 0) {
-			write_data_block(stream, color, buf, block_len, ++blocks, lines_per_block);
+			write_data_block(stream, color, buf, buf_pos, block_len, ++blocks, lines_per_block);
 			block_len = 0;
 		}
 	}
 	if (line % lines_per_block)
-		write_data_block(stream, color, buf, block_len, ++blocks, line % lines_per_block);
+		write_data_block(stream, color, buf, buf_pos, block_len, ++blocks, line % lines_per_block);
+	free(buf);
 }
 
 char *ppd_get(ppd_file_t *ppd, const char *name) {
@@ -311,7 +315,6 @@ int main(int argc, char *argv[]) {
 		u16 lines_per_block = DIV_ROUND_UP(height, BLOCKS_PER_PAGE);
 		/* worst case: start byte + 16-byte table + 5-byte padding + each byte encoded as two */
 		buf_size = 1 + 16 + 5 + 2 * line_len_file * lines_per_block;
-		buf = realloc(buf, buf_size);
 		dpi = page_header.HWResolution[0];
 		DBG("line_len_file=%d, height=%d width=%d", line_len_file, height, width);
 		DBG("dpi_x=%d,cupsColorOrder=%d,cupsColorSpace=%d", dpi, page_header.cupsColorOrder, page_header.cupsColorSpace);
@@ -362,7 +365,6 @@ int main(int argc, char *argv[]) {
 		}
 		encode_color(ras, stdout, height, line_len_file, lines_per_block, COLOR_K);
 	}
-	free(buf);
 	ppdClose(ppd);
 	cupsRasterClose(ras);
 	/* end of print data */
